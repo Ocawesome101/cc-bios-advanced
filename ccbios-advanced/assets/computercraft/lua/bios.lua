@@ -179,7 +179,7 @@ local colors = {
 
 local function status(msg, s)
   if s == "ok" or not s then
-    term.setTextColor(colors.lightBlue)
+    term.setTextColor(colors.white)
   elseif s == "err" then
     term.setTextColor(colors.red)
   end
