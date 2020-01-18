@@ -216,6 +216,7 @@ local function boot(file)
   local ok, err = loadfile(file)
   if not ok then
     status("Failed to load file " .. file .. ": " .. err)
+    return
   end
   ok()
   ccefi.read()
