@@ -39,7 +39,7 @@ function ccefi.pullEvent(filter)
   return coroutine.yield(filter)
 end
 
-ccefi.keys = loadstring(fs.open("/rom/modules/ccefi/keys.lua", "r").readAll())()
+ccefi.keys = loadstring(fs.open("/rom/modules/ccefi/keys.lua", "r").readAll())() -- Yes, I know I shouldn't do this, and I don't care at this point.
 
 function ccefi.read() -- Very cut-down version of CraftOS's read()
   term.setCursorBlink( true )
@@ -196,8 +196,7 @@ function ccefi.shutdown()
 end
 
 function loadfile(path)
-  ccefi.write(path)
-  ccefi.read()
+  ccefi.write(path, true)
   if not fs.exists(path) then
     return nil, "File not found"
   end
@@ -206,7 +205,7 @@ function loadfile(path)
   local h = fs.open(path, "r")
   buffer = h.readAll()
   h.close()
-  return loadstring(buffer, path)
+  return loadstring(buffer, "@" .. path, "bt". _G)
 end
 
 status("Welcome to " .. ccefi.version())
