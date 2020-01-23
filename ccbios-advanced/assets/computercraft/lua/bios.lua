@@ -1,6 +1,6 @@
 -- Custom EFI. CC-UNIX will be written against this. --
 
-_G.ccefi = {}
+local ccefi = {}
 
 local CCEFI_VERSION = "OC-EFI 2 v0.0.1"
 
@@ -35,13 +35,15 @@ function ccefi.write(text, newLine)
   if newLine then newline() end
 end
 
-function ccefi.pullEvent(filter)
+function os.pullEvent(filter)
   return coroutine.yield(filter)
 end
 
-ccefi.keys = loadstring(fs.open("/rom/modules/ccefi/keys.lua", "r").readAll())() -- Yes, I know I shouldn't do this, and I don't care at this point.
+ccefi.pullEvent = os.pullEvent
 
-function ccefi.read() -- Very cut-down version of CraftOS's read()
+ccefi.keys = loadstring(fs.open("/rom/modules/ccefi/keys.lua", "r").readAll())()
+
+function read() -- Very cut-down version of CraftOS's read()
   term.setCursorBlink( true )
 
   local sLine = ""
@@ -158,6 +160,8 @@ function ccefi.read() -- Very cut-down version of CraftOS's read()
   return sLine
 end
 
+ccefi.read = read
+
 local colors = {
   white = 1,
   orange = 2,
@@ -196,7 +200,7 @@ function ccefi.shutdown()
 end
 
 function loadfile(path)
-  ccefi.write(path, true)
+--  ccefi.write(path, true)
   if not fs.exists(path) then
     return nil, "File not found"
   end
@@ -205,8 +209,11 @@ function loadfile(path)
   local h = fs.open(path, "r")
   buffer = h.readAll()
   h.close()
-  return loadstring(buffer, "@" .. path, "bt". _G)
+  local func, err = loadstring(buffer, "@" .. path, "bt", _G)
+  return func, err
 end
+
+_G.ccefi = ccefi
 
 status("Welcome to " .. ccefi.version())
 status("Checking for bootable devices....")
@@ -214,11 +221,10 @@ status("Checking for bootable devices....")
 local function boot(file)
   local ok, err = loadfile(file)
   if not ok then
-    status("Failed to load file " .. file .. ": " .. err)
+    status("Failed to load file " .. file .. ": " .. (err or "No reason given"))
     return
   end
   ok()
-  ccefi.read()
   ccefi.shutdown()
 end
 
