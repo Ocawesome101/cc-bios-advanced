@@ -43,7 +43,7 @@ ccefi.pullEvent = os.pullEvent
 
 ccefi.keys = loadstring(fs.open("/rom/modules/ccefi/keys.lua", "r").readAll())()
 
-function read() -- Very cut-down version of CraftOS's read()
+function ccefi.read() -- Cut-down version of CraftOS' read() --
   term.setCursorBlink( true )
 
   local sLine = ""
@@ -160,8 +160,6 @@ function read() -- Very cut-down version of CraftOS's read()
   return sLine
 end
 
-ccefi.read = read
-
 local colors = {
   white = 1,
   orange = 2,
@@ -215,8 +213,45 @@ end
 
 _G.ccefi = ccefi
 
+local function unpack(tbl, i)
+  local i = i or 1
+  if i <= #tbl then
+    return tbl[i], unpack(tbl, i + 1)
+  end
+end
+
+table.pack = function(...)
+  return {...}
+end
+
+table.unpack = function(tbl)
+  return unpack(tbl)
+end
+
 status("Welcome to " .. ccefi.version())
 status("Checking for bootable devices....")
+
+local function run(func)
+  local eventData = { n = 0 }
+  local filter = ""
+  local coro = coroutine.create(func)
+  while true do
+    if filter == "" or not filter or eventData[1] == filter or eventData[1] == "terminate" then
+      local ok, param = coroutine.resume(coro, table.unpack(eventData)) -- Don't ask. I don't know. Magic.
+      if not ok then
+	status("ERR:" .. err, "err")
+	while true do
+	  os.pullEvent()
+	end
+      end
+      filter = param
+      if coroutine.status(coro) == "dead" then
+	return true
+      end
+    end
+    eventData = table.pack(os.pullEvent())
+  end
+end
 
 local function boot(file)
   local ok, err = loadfile(file)
@@ -224,7 +259,13 @@ local function boot(file)
     status("Failed to load file " .. file .. ": " .. (err or "No reason given"))
     return
   end
-  ok()
+  local ok, err = pcall(run, ok)
+  if not ok and err then
+    ccefi.write(err)
+    while true do
+      os.pullEvent()
+    end
+  end
   ccefi.shutdown()
 end
 
