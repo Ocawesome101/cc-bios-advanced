@@ -35,130 +35,68 @@ function ccefi.write(text, newLine)
   if newLine then newline() end
 end
 
-function os.pullEvent(filter)
+function os.pullEventRaw(filter)
   return coroutine.yield(filter)
 end
 
-ccefi.pullEvent = os.pullEvent
+local nativeshutdown = os.shutdown
+function os.shutdown()
+  term.clear()
+  nativeshutdown()
+  while true do
+    os.pullEvent()
+  end
+end
 
-ccefi.keys = loadstring(fs.open("/rom/modules/ccefi/keys.lua", "r").readAll())()
+local nativereboot = os.reboot
+function os.reboot()
+  nativereboot()
+  while true do
+    os.pullEvent()
+  end
+end
 
-function ccefi.read() -- Cut-down version of CraftOS' read() --
-  term.setCursorBlink( true )
+ccefi.pullEvent = os.pullEventRaw
 
-  local sLine = ""
-  local nPos, nScroll = #sLine, 0
+local keys = loadstring(fs.open("/rom/modules/ccefi/keys.lua", "r").readAll())()
 
-  local w = term.getSize()
-  local sx = term.getCursorPos()
-
-  local function redraw( _bClear )
-    local cursor_pos = nPos - nScroll
-    if sx + cursor_pos >= w then
-      -- We've moved beyond the RHS, ensure we're on the edge.
-      nScroll = sx + nPos - w
-    elseif cursor_pos < 0 then
-      -- We've moved beyond the LHS, ensure we're on the edge.
-      nScroll = nPos
+function read(replaceChar) -- mostly API-independent read function
+  term.setCursorBlink(true)
+  local str = ""
+  local x,y = term.getCursorPos()
+  local w,h = term.getSize()
+  
+  local function redraw()
+    term.setCursorPos(x,y)
+    term.write(string.rep(" ", w-x))
+    term.setCursorPos(x,y)
+    if replaceChar then
+      term.write(string.rep(replaceChar, #str))
+    else
+      term.write(str)
     end
-
-    local _, cy = term.getCursorPos()
-    term.setCursorPos( sx, cy )
-    term.write( string.sub( sLine, nScroll + 1 ) )
   end
-
-  local function clear()
-    redraw( true )
-  end
-  redraw()
 
   while true do
-    local sEvent, param, param1, param2 = ccefi.pullEvent()
-    if sEvent == "char" then
-      -- Typed key
-      clear()
-      sLine = string.sub( sLine, 1, nPos ) .. param .. string.sub( sLine, nPos + 1 )
-      nPos = nPos + 1      
-      redraw()
+    local event, param = os.pullEventRaw()
 
-    elseif sEvent == "paste" then
-      -- Pasted text
-      clear()
-      sLine = string.sub( sLine, 1, nPos ) .. param .. string.sub( sLine, nPos + 1 )
-      nPos = nPos + #param
-      redraw()
-
-    elseif sEvent == "key" then
-      if param == ccefi.keys.enter then
-        -- Enter
-        if nCompletion then
-          clear()
-          uncomplete()
-          redraw()
-        end
+    if event == "key" then
+      if param == keys.backspace then
+        str = str:sub(1,#str-1)
+      elseif param == keys.enter then
         break
-
-      elseif param == ccefi.keys.left then
-        -- Left
-        if nPos > 0 then
-          clear()
-          nPos = nPos - 1
-          
-          redraw()
-        end
-
-      elseif param == ccefi.keys.right then
-        -- Right
-        if nPos < #sLine then
-          -- Move right
-          clear()
-          nPos = nPos + 1
-          
-          redraw()
-        end
-
-      elseif param == ccefi.keys.backspace then
-        -- Backspace
-        if nPos > 0 then
-          clear()
-          sLine = string.sub( sLine, 1, nPos - 1 ) .. string.sub( sLine, nPos + 1 )
-          nPos = nPos - 1
-          if nScroll > 0 then nScroll = nScroll - 1 end
-          
-          redraw()
-        end
-      elseif param == ccefi.keys.delete then
-        -- Delete
-        if nPos < #sLine then
-          clear()
-          sLine = string.sub( sLine, 1, nPos ) .. string.sub( sLine, nPos + 2 )
-          
-          redraw()
-        end
       end
-    elseif sEvent == "mouse_click" or sEvent == "mouse_drag" and param == 1 then
-      local _, cy = term.getCursorPos()
-      if param1 >= sx and param1 <= w and param2 == cy then
-        -- Ensure we don't scroll beyond the current line
-        nPos = math.min(math.max(nScroll + param1 - sx, 0), #sLine)
-        redraw()
-      end
-
-    elseif sEvent == "term_resize" then
-      -- Terminal resized
-      w = term.getSize()
-      redraw()
-
+    elseif event == "char" then
+      str = str .. param
+    elseif event == "paste" then
+      str = str .. param
     end
+    redraw()
   end
-
-  local cx, cy = term.getCursorPos()
-  term.setCursorBlink( false )
-  term.setCursorPos( w + 1, cy )
   ccefi.write("", true)
-
-  return sLine
+  return str
 end
+
 
 local colors = {
   white = 1,
@@ -215,7 +153,7 @@ _G.ccefi = ccefi
 
 local function unpack(tbl, i)
   local i = i or 1
-  if i <= #tbl then
+  if tbl[i] ~= nil then
     return tbl[i], unpack(tbl, i + 1)
   end
 end
@@ -230,6 +168,15 @@ end
 
 status("Welcome to " .. ccefi.version())
 status("Checking for bootable devices....")
+
+function os.pullEvent(f)
+  local data = table.pack(os.pullEventRaw())
+  if data[1] == "terminate" then
+    error("Program terminated")
+    return false
+  end
+  return table.unpack(data)
+end
 
 local function run(func)
   local eventData = { n = 0 }
@@ -260,11 +207,15 @@ local function boot(file)
     return
   end
   local ok, err = pcall(run, ok)
-  if not ok and err then
+  if not ok then
     ccefi.write(err)
     while true do
       os.pullEvent()
     end
+  end
+  term.setCursorBlink(false)
+  while true do
+    os.pullEvent()
   end
   ccefi.shutdown()
 end
@@ -290,7 +241,7 @@ else
   status("Entering EFI shell.")
   while true do
     ccefi.write("-> ")
-    local cmd = ccefi.read()
+    local cmd = read()
     local ok, err = pcall(function()loadstring(cmd, "shell.lua")()end)
     if not ok then ccefi.write(err, true)end
   end
